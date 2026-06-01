@@ -1,10 +1,14 @@
-import os
 import json
+import os
+
 import sys
 import asyncio
 import logging
 import argparse
 from typing import List
+
+# Fix sys.path for standalone execution
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-util"))
 
 # Set up standard logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -13,9 +17,28 @@ logger = logging.getLogger("Orchestrator")
 from youtube_summarizer import YouTubeSummarizer
 from itinerary_planner import ItineraryPlanner
 from review_summarizer import ReviewSummarizer
+from location_navigation import fetch_nearby_attractions, enrich_hotels_with_attractions
+
+import urllib.parse
+import urllib.request
+from config_utils import load_config
+
+import pydantic
+from google.adk import Agent
 
 class TravelPlannerOrchestrator:
     def __init__(self):
+        self.config_data = load_config()
+        
+        # Ensure API keys are in environment for SDKs (ADK, etc)
+        gemini_key = self.config_data.get("apiKeys", {}).get("gemini")
+        maps_key = self.config_data.get("apiKeys", {}).get("maps")
+        
+        if gemini_key:
+            os.environ["GOOGLE_API_KEY"] = gemini_key
+        if maps_key:
+            os.environ["GOOGLE_MAPS_API_KEY"] = maps_key
+
         self.summarizer = YouTubeSummarizer()
         self.planner = ItineraryPlanner()
         self.reviewer = ReviewSummarizer()
@@ -51,7 +74,7 @@ class TravelPlannerOrchestrator:
 
         # 🚀 STAGE 2: PLAN CUSTOM ITINERARY
         logger.info("Engaging Stage 2: Itinerary Planner Agent...")
-        planner_output = await self.planner.plan(summarizer_output.model_dump(), intent_query)
+        planner_output = await self.planner.plan(summarizer_output.model_dump() if hasattr(summarizer_output, 'model_dump') else summarizer_output, intent_query)
         logger.info(f"Stage 2 complete. Generated '{planner_output.title}' itinerary.")
 
         # 🚀 STAGE 3: SUMMARIZE REVIEWS
@@ -78,10 +101,16 @@ class TravelPlannerOrchestrator:
         logger.info("Stage 3 complete. Review synthesis compiled.")
 
         # 🚀 STAGE 4: AGGREGATE UNIFIED OUTPUT
+        planner_data = planner_output.model_dump() if hasattr(planner_output, "model_dump") else planner_output
+        
+        # Enrich hotels with nearby attractions in parallel
+        hotels_list = planner_data.get("hotels", [])
+        await enrich_hotels_with_attractions(hotels_list, intent_query)
+
         aggregated_result = {
-            "youtube_details": summarizer_output.model_dump(),
-            "custom_itinerary": planner_output.model_dump(),
-            "grounded_reviews": reviews_output.model_dump()
+            "youtube_details": summarizer_output.model_dump() if hasattr(summarizer_output, 'model_dump') else summarizer_output,
+            "custom_itinerary": planner_data,
+            "grounded_reviews": reviews_output.model_dump() if hasattr(reviews_output, 'model_dump') else reviews_output
         }
 
         # Generate markdown report content

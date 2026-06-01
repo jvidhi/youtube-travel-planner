@@ -1,5 +1,6 @@
-import os
 import json
+import os
+
 import urllib.parse
 import urllib.request
 import asyncio
@@ -7,8 +8,7 @@ import logging
 import pydantic
 from typing import List, Optional
 
-# Import Google Antigravity SDK
-from google.antigravity import Agent, LocalAgentConfig
+from google.adk import Agent
 
 from config_utils import load_config
 
@@ -44,6 +44,7 @@ def google_places_details_reviews(place_id: str) -> str:
     Returns:
         JSON string containing location details, ratings, and raw customer reviews.
     """
+    logger.info(f"🔧 Tool execution: google_places_details_reviews(place_id='{place_id}')")
     config = load_config()
     api_key = config.get("apiKeys", {}).get("maps")
     if not api_key:
@@ -70,7 +71,13 @@ class ReviewSummarizer:
     def __init__(self):
         self.config_data = load_config()
         self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-2.5-flash")
+        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+        self.maps_key = self.config_data.get("apiKeys", {}).get("maps", "")
+        
+        if self.gemini_key:
+            os.environ["GOOGLE_API_KEY"] = self.gemini_key
+        if self.maps_key:
+            os.environ["GOOGLE_MAPS_API_KEY"] = self.maps_key
 
     async def summarize_reviews(self, places_list: List[dict], intent_query: str) -> ReviewSynthesizerOutput:
         logger.info(f"Review Summarizer engaging for {len(places_list)} locations...")
@@ -83,27 +90,63 @@ class ReviewSummarizer:
             "satisfies the user's custom trip intent (e.g., analyzing if families praise the toddler friendliness of a hotel)."
         )
 
-        agent_config = LocalAgentConfig(
+        agent = Agent(
+            name="review_summarizer",
             model=self.gemini_model,
-            api_key=self.gemini_key,
-            system_instructions=sys_instructions,
+            instruction=sys_instructions,
             tools=[google_places_details_reviews],
-            response_schema=ReviewSynthesizerOutput
+            output_schema=ReviewSynthesizerOutput
         )
 
-        async with Agent(config=agent_config) as agent:
-            prompt = (
-                f"Please retrieve and synthesize real customer reviews for the following locations:\n"
-                f"{json.dumps(places_list, indent=2)}\n\n"
-                f"Trip style / User Intent query: \"**{intent_query}**\"\n\n"
-                f"For each location in the list:\n"
-                f"1. Call 'google_places_details_reviews' with its Place ID.\n"
-                f"2. Read the reviews text. Summarize key highlights, and analyze suitability for the user's intent.\n"
-                f"3. Construct the structured ReviewSynthesizerOutput object."
+        prompt = (
+            f"Please retrieve and synthesize real customer reviews for the following locations:\n"
+            f"{json.dumps(places_list, indent=2)}\n\n"
+            f"Trip style / User Intent query: \"**{intent_query}**\"\n\n"
+            f"For each location in the list:\n"
+            f"1. Call 'google_places_details_reviews' with its Place ID.\n"
+            f"2. Read the reviews text. Summarize key highlights, and analyze suitability for the user's intent.\n"
+            f"3. Construct the structured ReviewSynthesizerOutput object."
+        )
+
+        logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) to analyze and synthesize reviews...")
+
+        try:
+            from google.adk.runners import InMemoryRunner
+            from google.genai.types import Content, Part
+            import uuid
+            runner = InMemoryRunner(agent=agent)
+            
+            # ADK requires explicit session creation
+            session_id = f"sess_{uuid.uuid4()}"
+            await runner.session_service.create_session(
+                app_name=runner.app_name,
+                user_id="default_user",
+                session_id=session_id
             )
             
-            response = await agent.chat(prompt)
-            structured_data = await response.structured_output()
+            final_output = None
+            msg = Content(role="user", parts=[Part.from_text(text=prompt)])
+            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+                logger.info(f"⚙️  Agent Event: Processing step in review_summarizer...")
+                if hasattr(event, "output") and event.output:
+                    final_output = event.output
+                elif hasattr(event, "content") and event.content and event.content.parts:
+                    text_val = event.content.parts[0].text
+                    if text_val:
+                        
+                        try:
+                            final_output = json.loads(text_val)
+                        except:
+                            final_output = text_val
+            
+            structured_data = final_output
+            
             if not structured_data:
                 raise ValueError("Review Summarizer failed to produce structured output.")
-            return ReviewSynthesizerOutput(**structured_data)
+            
+            if isinstance(structured_data, dict):
+                return ReviewSynthesizerOutput(**structured_data)
+            return structured_data
+        except Exception as e:
+            logger.error(f"Agent execution failed: {e}")
+            raise ValueError(f"Review Summarizer failed: {e}")

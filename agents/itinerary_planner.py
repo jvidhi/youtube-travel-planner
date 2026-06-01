@@ -1,5 +1,6 @@
-import os
 import json
+import os
+
 import urllib.parse
 import urllib.request
 import asyncio
@@ -7,8 +8,7 @@ import logging
 import pydantic
 from typing import List, Optional
 
-# Import Google Antigravity SDK
-from google.antigravity import Agent, LocalAgentConfig
+from google.adk import Agent
 
 from config_utils import load_config
 
@@ -71,6 +71,7 @@ def google_places_hotel_search(destination: str, intent: str) -> str:
     Returns:
         JSON string representing a list of real hotels with place IDs, ratings, addresses, and location coordinates.
     """
+    logger.info(f"🔧 Tool execution: google_places_hotel_search(destination='{destination}', intent='{intent}')")
     config = load_config()
     api_key = config.get("apiKeys", {}).get("maps")
     if not api_key:
@@ -108,6 +109,7 @@ def google_places_restaurant_search(destination: str, intent: str) -> str:
         destination: The city or town in Tuscany (e.g. 'Pienza', 'Montepulciano').
         intent: The target styling focus (e.g. 'kid-friendly dining', 'local steakhouse', 'romantic scenic dinner').
     """
+    logger.info(f"🔧 Tool execution: google_places_restaurant_search(destination='{destination}', intent='{intent}')")
     config = load_config()
     api_key = config.get("apiKeys", {}).get("maps")
     if not api_key:
@@ -146,7 +148,13 @@ class ItineraryPlanner:
     def __init__(self):
         self.config_data = load_config()
         self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-2.5-flash")
+        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+        self.maps_key = self.config_data.get("apiKeys", {}).get("maps", "")
+        
+        if self.gemini_key:
+            os.environ["GOOGLE_API_KEY"] = self.gemini_key
+        if self.maps_key:
+            os.environ["GOOGLE_MAPS_API_KEY"] = self.maps_key
 
     async def plan(self, summarizer_output: dict, intent_query: str) -> ItineraryOutput:
         logger.info(f"Itinerary Planner engaging for intent: {intent_query}")
@@ -161,32 +169,67 @@ class ItineraryPlanner:
             "so they can be plotted accurately on visual maps downstream."
         )
 
-        agent_config = LocalAgentConfig(
+        agent = Agent(
+            name="itinerary_planner",
             model=self.gemini_model,
-            api_key=self.gemini_key,
-            system_instructions=sys_instructions,
+            instruction=sys_instructions,
             tools=[google_places_hotel_search, google_places_restaurant_search],
-            response_schema=ItineraryOutput
+            output_schema=ItineraryOutput
         )
 
         # Prepare grounding context from summarizer output
         grounding_context = json.dumps(summarizer_output, indent=2)
 
-        async with Agent(config=agent_config) as agent:
-            prompt = (
-                f"Please build a complete, highly targeted travel itinerary customized to this User Intent:\n"
-                f"\"**{intent_query}**\"\n\n"
-                f"Grounding travel details from YouTube video:\n"
-                f"{grounding_context}\n\n"
-                f"You MUST:\n"
-                f"1. Identify the core destinations from the video notes (e.g. Pienza, Montalcino, Val d'Orcia).\n"
-                f"2. Call 'google_places_hotel_search' for each town using the user's intent (e.g., family friendly, kid safe) to retrieve actual hotels.\n"
-                f"3. Call 'google_places_restaurant_search' for dining recommendations aligned with their intent.\n"
-                f"4. Construct a day-by-day itinerary. In each activity, match the locations, coordinates, ratings, and place IDs discovered."
+        prompt = (
+            f"Please build a complete, highly targeted travel itinerary customized to this User Intent:\n"
+            f"\"**{intent_query}**\"\n\n"
+            f"Grounding travel details from YouTube video:\n"
+            f"{grounding_context}\n\n"
+            f"You MUST:\n"
+            f"1. Identify the core destinations from the video notes (e.g. Pienza, Montalcino, Val d'Orcia).\n"
+            f"2. Call 'google_places_hotel_search' for each town using the user's intent (e.g., family friendly, kid safe) to retrieve actual hotels.\n"
+            f"3. Call 'google_places_restaurant_search' for dining recommendations aligned with their intent.\n"
+            f"4. Construct a day-by-day itinerary. In each activity, match the locations, coordinates, ratings, and place IDs discovered."
+        )
+        
+        logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) to generate the detailed itinerary...")
+        
+        try:
+            from google.adk.runners import InMemoryRunner
+            from google.genai.types import Content, Part
+            import uuid
+            runner = InMemoryRunner(agent=agent)
+            
+            # ADK requires explicit session creation
+            session_id = f"sess_{uuid.uuid4()}"
+            await runner.session_service.create_session(
+                app_name=runner.app_name,
+                user_id="default_user",
+                session_id=session_id
             )
             
-            response = await agent.chat(prompt)
-            structured_data = await response.structured_output()
-            if not structured_data:
+            final_output = None
+            msg = Content(role="user", parts=[Part.from_text(text=prompt)])
+            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+                logger.info(f"⚙️  Agent Event: Processing step in itinerary_planner...")
+                if hasattr(event, "output") and event.output:
+                    final_output = event.output
+                elif hasattr(event, "content") and event.content and event.content.parts:
+                    text_val = event.content.parts[0].text
+                    if text_val:
+                        
+                        try:
+                            final_output = json.loads(text_val)
+                        except:
+                            final_output = text_val
+            
+            response = final_output
+            if not response:
                 raise ValueError("Itinerary Planner failed to produce structured output.")
-            return ItineraryOutput(**structured_data)
+            
+            if isinstance(response, dict):
+                return ItineraryOutput(**response)
+            return response
+        except Exception as e:
+            logger.error(f"Agent execution failed: {e}")
+            raise ValueError(f"Itinerary Planner failed: {e}")

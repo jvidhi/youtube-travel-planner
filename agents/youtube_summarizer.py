@@ -1,5 +1,6 @@
-import os
 import json
+import os
+
 import urllib.parse
 import urllib.request
 import asyncio
@@ -7,8 +8,7 @@ import logging
 import pydantic
 from typing import List, Optional
 
-# Import Google Antigravity SDK
-from google.antigravity import Agent, LocalAgentConfig
+from google.adk import Agent
 
 from config_utils import load_config
 
@@ -69,6 +69,7 @@ def get_youtube_video_details(video_url: str) -> str:
     Args:
         video_url: The YouTube URL to query.
     """
+    logger.info(f"🔧 Tool execution: get_youtube_video_details(video_url='{video_url}')")
     video_id = extract_youtube_id(video_url)
     if not video_id:
         return json.dumps({"error": "Invalid YouTube URL"})
@@ -104,6 +105,7 @@ def get_youtube_video_transcript(video_url: str) -> str:
     Args:
         video_url: The YouTube URL to retrieve.
     """
+    logger.info(f"🔧 Tool execution: get_youtube_video_transcript(video_url='{video_url}')")
     video_id = extract_youtube_id(video_url)
     if not video_id:
         return json.dumps({"error": "Invalid YouTube URL"})
@@ -139,12 +141,14 @@ def get_youtube_video_transcript(video_url: str) -> str:
             
             client = genai.Client(api_key=gemini_key)
             
-            # Use gemini-2.5-flash for video understanding capabilities
+            gemini_model = config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+            
+            # Use the configured model for video understanding capabilities
             # For youtube links, we can pass it as a Part using from_uri or directly in the prompt if the model supports YouTube URLs.
             # In the new genai SDK, we can pass the YouTube video as a file-like uri if supported, or just pass the URL in the text.
             # However, the standard way for YouTube videos in GenAI is to pass the URL.
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=gemini_model,
                 contents=[
                     f"Watch this YouTube video: {video_url}\n\n"
                     "Provide a detailed chronological transcript and summary of the video, including timestamps if possible, "
@@ -170,36 +174,87 @@ class YouTubeSummarizer:
     def __init__(self):
         self.config_data = load_config()
         self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-2.5-flash")
+        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+        
+        if self.gemini_key:
+            os.environ["GOOGLE_API_KEY"] = self.gemini_key
 
     async def summarize(self, video_url: str) -> SummarizerOutput:
         logger.info(f"Summarizer engaging for travel video: {video_url}")
         
+        # 🚀 OPTIMIZATION: Pre-fetch context concurrently in Python to eliminate LLM tool-calling latency
+        logger.info(f"🚀 Pre-fetching YouTube transcript and metadata concurrently...")
+        
+        loop = asyncio.get_running_loop()
+        details_task = loop.run_in_executor(None, get_youtube_video_details, video_url)
+        transcript_task = loop.run_in_executor(None, get_youtube_video_transcript, video_url)
+        
+        video_details, video_transcript = await asyncio.gather(details_task, transcript_task)
+        
+        logger.info(f"✅ Video Context Pre-fetch Complete. Compiling AI Summary...")
+
         sys_instructions = (
             "You are an expert YouTube Travel Summarizer. Your goal is to extract all landmarks, "
-            "hotel opportunities, and connectivity/transit tips from the video snippet and transcript. "
-            "You MUST use the custom tools provided to retrieve metadata and transcript data."
+            "hotel opportunities, and connectivity/transit tips from the provided video snippet and transcript."
         )
 
-        agent_config = LocalAgentConfig(
+        agent = Agent(
+            name="youtube_summarizer",
             model=self.gemini_model,
-            api_key=self.gemini_key,
-            system_instructions=sys_instructions,
-            tools=[get_youtube_video_details, get_youtube_video_transcript],
-            response_schema=SummarizerOutput
+            instruction=sys_instructions,
+            output_schema=SummarizerOutput
         )
 
-        async with Agent(config=agent_config) as agent:
-            prompt = (
-                f"Please extract all travel destinations, hotel details, practical tips, "
-                f"and a grounded chronological travel summary for this video: {video_url}.\n\n"
-                f"You must:\n"
-                f"1. Retrieve video snippet details using 'get_youtube_video_details'.\n"
-                f"2. Retrieve transcript details using 'get_youtube_video_transcript'.\n"
-                f"3. Compile structural elements matching the required output schema."
+        prompt = (
+            f"Please extract all travel destinations, hotel details, practical tips, "
+            f"and a grounded chronological travel summary for this video: {video_url}.\n\n"
+            f"### VIDEO METADATA ###\n{video_details}\n\n"
+            f"### VIDEO TRANSCRIPT ###\n{video_transcript}\n\n"
+            f"Compile structural elements matching the required output schema strictly based on the context above."
+        )
+        logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) for structured travel synthesis...")
+        
+        try:
+            from google.adk.runners import InMemoryRunner
+            from google.genai.types import Content, Part
+            import uuid
+            runner = InMemoryRunner(agent=agent)
+            
+            # ADK requires explicit session creation
+            session_id = f"sess_{uuid.uuid4()}"
+            await runner.session_service.create_session(
+                app_name=runner.app_name,
+                user_id="default_user",
+                session_id=session_id
             )
-            response = await agent.chat(prompt)
-            structured_data = await response.structured_output()
+            
+            # Since ADK returns an AsyncGenerator of Events, we need to gather the output
+            # A common pattern is to just collect the final OUTPUT event.
+            final_output = None
+            msg = Content(role="user", parts=[Part.from_text(text=prompt)])
+            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+                logger.info(f"⚙️  Agent Event: Processing step in youtube_summarizer...")
+                # ADK events usually contain output in event.output when event.type == "OUTPUT"
+                # but to be safe we can check for output attribute.
+                if hasattr(event, "output") and event.output:
+                    final_output = event.output
+                elif hasattr(event, "content") and event.content and event.content.parts:
+                    text_val = event.content.parts[0].text
+                    if text_val:
+                        
+                        try:
+                            final_output = json.loads(text_val)
+                        except:
+                            final_output = text_val
+            
+            structured_data = final_output
+            
             if not structured_data:
                 raise ValueError("YouTube Summarizer failed to produce structured output.")
-            return SummarizerOutput(**structured_data)
+            
+            if isinstance(structured_data, dict):
+                return SummarizerOutput(**structured_data)
+            return structured_data
+        except Exception as e:
+            logger.error(f"Agent execution failed: {e}")
+            raise ValueError(f"YouTube Summarizer failed: {e}")
