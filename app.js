@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
             logToConsole("Planning complete!");
 
             // Show workspace
-            summarizerWorkspace.style.display = 'flex';
+            summarizerWorkspace.style.display = 'block';
             
             // Render YouTube Details (Stage 1) into Tabs
             const yt = data.youtube_details;
@@ -122,15 +122,32 @@ document.addEventListener('DOMContentLoaded', () => {
             // Hotels
             const hotelsContainer = document.getElementById('tab-hotels');
             hotelsContainer.innerHTML = '';
-            if (yt && yt.hotels) {
-                yt.hotels.forEach(hotel => {
+            const recommendedHotels = data.custom_itinerary?.hotels;
+            if (recommendedHotels) {
+                recommendedHotels.forEach(hotel => {
                     const card = document.createElement('div');
                     card.className = 'glass-card';
                     card.style.marginBottom = '10px';
                     card.style.padding = '1rem';
+                    
+                    let attractionsHTML = '';
+                    if (hotel.nearby_attractions && hotel.nearby_attractions.length > 0) {
+                        const items = hotel.nearby_attractions.map(a => `<li>${DOMPurify.sanitize(a.name)} (⭐ ${DOMPurify.sanitize(a.rating)})</li>`).join('');
+                        attractionsHTML = `
+                            <div style="margin-top: 10px; background-color: #8b5cf6; padding: 10px; border-radius: 8px; color: white;">
+                                <h5 style="margin: 0 0 5px 0;"><i class="fa-solid fa-map-location-dot"></i> Nearby Attractions</h5>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 0.8rem;">
+                                    ${items}
+                                </ul>
+                            </div>
+                        `;
+                    }
+
                     card.innerHTML = `
-                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(hotel.name)} <span style="font-size: 0.75rem; margin-left: 8px;">${DOMPurify.sanitize(hotel.budget_tier)}</span></h4>
-                        <p style="font-size: 0.85rem; color: var(--text-secondary);">${DOMPurify.sanitize(hotel.details)}</p>
+                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(hotel.name)} <span style="font-size: 0.75rem; margin-left: 8px; color: var(--accent-color);">⭐ ${DOMPurify.sanitize(hotel.rating)}</span></h4>
+                        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-solid fa-location-dot"></i> ${DOMPurify.sanitize(hotel.address)}</p>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">${DOMPurify.sanitize(hotel.description)}</p>
+                        ${attractionsHTML}
                     `;
                     hotelsContainer.appendChild(card);
                 });
@@ -169,6 +186,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('destination-title').textContent = itinerary.title || "Your Custom Itinerary";
                 document.getElementById('destination-subtitle').textContent = itinerary.subtitle || "";
 
+                let mapLocations = [];
+
                 // Render Days
                 if (itinerary.days) {
                     itinerary.days.forEach(day => {
@@ -178,6 +197,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         let itemsHTML = '';
                         if (day.items) {
                             day.items.forEach(item => {
+                                // Add to map locations if it has coordinates (from place lookup) or we can infer it
+                                // For now, we will add the titles to the map if they have coordinates. 
+                                // Actually, let's extract them from the itinerary places/hotels or infer.
+                                // The backend returns places and hotels with lat/lng.
+                                
                                 let swapsHTML = '';
                                 if (item.swaps && item.swaps.length > 0) {
                                     swapsHTML = `<div style="margin-top: 8px; font-size: 0.75rem;"><span style="color: var(--accent-color);">Swaps:</span> ${item.swaps.map(s => `<span class="preset-pill" style="padding: 2px 6px; font-size: 0.7rem; margin-right: 4px; display: inline-block;">${DOMPurify.sanitize(s)}</span>`).join('')}</div>`;
@@ -212,6 +236,102 @@ document.addEventListener('DOMContentLoaded', () => {
                         `;
                         timelineContainer.appendChild(dayCard);
                     });
+                }
+
+                // Plot Map
+                const mapCanvas = document.getElementById('map-canvas');
+                mapCanvas.innerHTML = ''; // Clear fallback background
+                mapCanvas.style.background = '#1a1f2b'; // Dark map background
+                mapCanvas.style.position = 'relative';
+                mapCanvas.style.overflow = 'hidden';
+
+                // Collect all valid places to plot
+                const allPlaces = [];
+                if (itinerary.hotels) {
+                    itinerary.hotels.forEach(h => {
+                        if (h.lat && h.lng) allPlaces.push({ name: h.name, lat: h.lat, lng: h.lng, type: 'hotel' });
+                    });
+                }
+                if (itinerary.places) {
+                    itinerary.places.forEach(p => {
+                        if (p.lat && p.lng) allPlaces.push({ name: p.name, lat: p.lat, lng: p.lng, type: 'place' });
+                    });
+                }
+                
+                // We don't have an actual Google Map instance initialized in this UI yet,
+                // so we will simulate the map route plot on our canvas with a custom visual map layer.
+                if (allPlaces.length > 0) {
+                    document.getElementById('hud-route-count').textContent = `${allPlaces.length} locations pinned`;
+                    
+                    // Simple logic to draw relative points
+                    const lats = allPlaces.map(p => p.lat);
+                    const lngs = allPlaces.map(p => p.lng);
+                    const minLat = Math.min(...lats);
+                    const maxLat = Math.max(...lats);
+                    const minLng = Math.min(...lngs);
+                    const maxLng = Math.max(...lngs);
+                    
+                    const latRange = (maxLat - minLat) || 0.01;
+                    const lngRange = (maxLng - minLng) || 0.01;
+                    
+                    let routeSVG = `<svg width="100%" height="100%" style="position: absolute; top: 0; left: 0; z-index: 1;">`;
+                    let previousPoint = null;
+
+                    allPlaces.forEach((place, index) => {
+                        // Calculate percentage position
+                        // Invert Lat so higher lat is visually higher (top)
+                        const y = 10 + 80 * (1 - ((place.lat - minLat) / latRange));
+                        const x = 10 + 80 * ((place.lng - minLng) / lngRange);
+
+                        if (previousPoint) {
+                            routeSVG += `<line x1="${previousPoint.x}%" y1="${previousPoint.y}%" x2="${x}%" y2="${y}%" stroke="rgba(59,130,246,0.6)" stroke-width="2" stroke-dasharray="4" />`;
+                        }
+                        previousPoint = { x, y };
+
+                        const markerColor = place.type === 'hotel' ? '#8b5cf6' : '#3b82f6';
+                        const iconHtml = place.type === 'hotel' ? '<i class="fa-solid fa-bed" style="font-size: 10px; color: white;"></i>' : '<i class="fa-solid fa-location-dot" style="font-size: 10px; color: white;"></i>';
+
+                        const marker = document.createElement('div');
+                        marker.style.position = 'absolute';
+                        marker.style.left = `calc(${x}% - 12px)`;
+                        marker.style.top = `calc(${y}% - 12px)`;
+                        marker.style.width = '24px';
+                        marker.style.height = '24px';
+                        marker.style.backgroundColor = markerColor;
+                        marker.style.borderRadius = '50%';
+                        marker.style.display = 'flex';
+                        marker.style.alignItems = 'center';
+                        marker.style.justifyContent = 'center';
+                        marker.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                        marker.style.cursor = 'pointer';
+                        marker.style.zIndex = '2';
+                        marker.title = place.name;
+                        marker.innerHTML = iconHtml;
+
+                        const label = document.createElement('div');
+                        label.style.position = 'absolute';
+                        label.style.left = `calc(${x}% + 15px)`;
+                        label.style.top = `calc(${y}% - 10px)`;
+                        label.style.backgroundColor = 'rgba(0,0,0,0.7)';
+                        label.style.color = 'white';
+                        label.style.padding = '2px 6px';
+                        label.style.borderRadius = '4px';
+                        label.style.fontSize = '10px';
+                        label.style.whiteSpace = 'nowrap';
+                        label.style.zIndex = '3';
+                        label.style.pointerEvents = 'none';
+                        label.textContent = place.name;
+
+                        mapCanvas.appendChild(marker);
+                        mapCanvas.appendChild(label);
+                    });
+                    
+                    routeSVG += `</svg>`;
+                    mapCanvas.insertAdjacentHTML('afterbegin', routeSVG);
+
+                } else {
+                    document.getElementById('hud-route-count').textContent = `0 locations pinned`;
+                    mapCanvas.innerHTML = '<div style="color: #666; text-align: center; margin-top: 50%;">No coordinates available to plot</div>';
                 }
             }
             

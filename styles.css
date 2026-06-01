@@ -342,7 +342,6 @@ label {
     display: none;
     font-size: 0.9rem;
     color: var(--text-secondary);
-    overflow-y: auto;
 }
 .tab-content.active {
     display: block;

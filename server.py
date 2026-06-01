@@ -14,6 +14,7 @@ from starlette.staticfiles import StaticFiles
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents"))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "agent-util"))
 
 from agents.orchestrator import TravelPlannerOrchestrator
 

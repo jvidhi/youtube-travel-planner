@@ -1,2 +1,2 @@
 #!/bin/bash
-source ../.venv/bin/activate
+source agents/venv/bin/activate

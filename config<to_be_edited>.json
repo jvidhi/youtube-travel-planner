@@ -18,8 +18,8 @@
     "apiVersion": "v3"
   },
   "apiKeys": {
-    "gemini": "",
-    "youtube": "",
-    "maps": ""
+    "gemini": "[GCP_API_KEY]",
+    "youtube": "[GCP_API_KEY]",
+    "maps": "[GCP_API_KEY]"
   }
 }
