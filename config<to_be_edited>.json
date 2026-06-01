@@ -1,0 +1,25 @@
+{
+  "gcp": {
+    "projectId": "",
+    "projectNumber": ""
+  },
+  "models": {
+    "gemini": {
+      "activeModelId": "gemini-3.5-flash",
+      "apiVersion": "v1beta",
+      "endpoint": "https://generativelanguage.googleapis.com"
+    }
+  },
+  "maps": {
+    "apiVersion": "weekly",
+    "placesApiVersion": "v1"
+  },
+  "youtube": {
+    "apiVersion": "v3"
+  },
+  "apiKeys": {
+    "gemini": "",
+    "youtube": "",
+    "maps": ""
+  }
+}

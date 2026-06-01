@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aura Voyage - Agentic AI YouTube Trip Planner</title>
+    <!-- CSS Files -->
+    <link rel="stylesheet" href="styles.css">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Secure DOMPurify to fulfill secure coding guidelines -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.5/purify.min.js" integrity="sha512-KqUc2WMPF/gxte9xVjVE4TIt1LMUTidO3BrcItFg0Ro24I7pGNzgcXdnWdezNY+8T0/JEmdC79MuwYn+8UdOqw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+    <!-- Application Header -->
+    <header>
+        <div class="logo">
+            <i class="fa-solid fa-compass-drafting"></i>
+            <span>aura voyage</span>
+        </div>
+        <div class="header-actions">
+            <div class="preset-pill active" id="demo-badge" title="Currently running in sandbox demo mode">
+                <i class="fa-solid fa-sparkles"></i> Sandbox Mode
+            </div>
+            <button class="btn-icon" id="btn-settings" title="API & Map Settings">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Split Dashboard -->
+    <main class="dashboard">
+        
+        <!-- Left Panel: Input & YouTube Summarizer (Stage 1) -->
+        <section class="panel-left">
+            
+            <!-- Controller Card -->
+            <div class="glass-card input-container" id="planner-controller">
+                <label for="youtube-url">Enter Travel Video URL</label>
+                <div class="search-box-wrapper">
+                    <input type="text" id="youtube-url" class="search-input" placeholder="Paste YouTube Travel Guide URL..." autocomplete="off">
+                    <i class="fa-brands fa-youtube input-icon"></i>
+                </div>
+
+                <label for="trip-intent" style="margin-top: 6px;">Specify Intent / Custom Prompt (Optional)</label>
+                <div class="search-box-wrapper">
+                    <textarea id="trip-intent" class="search-input" style="height: 75px; resize: none; padding-left: 16px; padding-top: 12px; line-height: 1.5;" placeholder="E.g. Recreate this trip exactly, suggest similar places instead, create the same itinerary for a family..."></textarea>
+                </div>
+                
+                <button class="btn-primary" id="btn-generate">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Plan from Video
+                </button>
+
+                <!-- Presets for Instant Wow experience -->
+                <div class="presets-wrapper">
+                    <div class="presets-title">Or choose a popular preset:</div>
+                    <div class="presets-list">
+                        <button class="preset-pill" data-preset="tokyo">
+                            <i class="fa-solid fa-torii-gate"></i> Tokyo 7-Day
+                        </button>
+                        <button class="preset-pill" data-preset="amalfi">
+                            <i class="fa-solid fa-umbrella-beach"></i> Amalfi Summer
+                        </button>
+                        <button class="preset-pill" data-preset="iceland">
+                            <i class="fa-solid fa-volcano"></i> Iceland Ring Road
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- YouTube Video Thumbnail Preview (Dynamic) -->
+            <div class="youtube-preview" id="yt-preview-card">
+                <img src="" alt="Video Thumbnail" id="yt-thumbnail">
+                <div class="youtube-preview-overlay">
+                    <div class="youtube-title" id="yt-video-title">Tokyo's Hidden Districts & Essential Food Tour Guide</div>
+                    <div class="youtube-channel" id="yt-video-author">
+                        <i class="fa-solid fa-circle-check"></i> <span id="yt-author-name">Travelers Guild</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Execution Logger Console -->
+            <div class="agent-log-console" id="agent-console">
+                <!-- Appended logs will flow here programmatically -->
+            </div>
+
+            <!-- Agent Orchestrator Progress Indicator -->
+            <div class="agent-pipeline">
+                <div class="agent-badge agent-1" id="agent-badge-1">
+                    <i class="fa-solid fa-brain"></i> YT-Summarizer
+                </div>
+                <div class="agent-connector" id="pipeline-connector"></div>
+                <div class="agent-badge agent-2" id="agent-badge-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Gemini-Planner
+                </div>
+            </div>
+
+            <!-- YouTube Summarizer Output Workspace (Stage 1 Dashboard) -->
+            <div class="glass-card tabs-container" id="summarizer-workspace" style="display: none;">
+                <div class="tabs-header">
+                    <button class="tab-btn active" data-tab="tab-places" id="tab-btn-places">Places</button>
+                    <button class="tab-btn" data-tab="tab-hotels" id="tab-btn-hotels">Hotels</button>
+                    <button class="tab-btn" data-tab="tab-tips" id="tab-btn-tips">Tips</button>
+                    <button class="tab-btn" data-tab="tab-itinerary" id="tab-btn-itinerary">YT Notes</button>
+                </div>
+                
+                <!-- Tab Content: Places Mentioned -->
+                <div class="tab-content active" id="tab-places">
+                    <!-- Dynamic Places Cards appended via app.js -->
+                </div>
+
+                <!-- Tab Content: Hotels & Lodging -->
+                <div class="tab-content" id="tab-hotels">
+                    <!-- Dynamic Hotels Cards appended via app.js -->
+                </div>
+
+                <!-- Tab Content: Connectivity & Travel Tips -->
+                <div class="tab-content" id="tab-tips">
+                    <!-- Dynamic Tips Cards appended via app.js -->
+                </div>
+
+                <!-- Tab Content: Raw video itinerary notes -->
+                <div class="tab-content" id="tab-itinerary">
+                    <!-- Raw itinerary text description -->
+                </div>
+            </div>
+
+        </section>
+        
+        <!-- Right Panel: Map & Dynamic Enhanced Itinerary Timeline (Stage 2) -->
+        <section class="panel-right" id="planner-workspace">
+            
+            <!-- Controls bar -->
+            <div class="workspace-controls">
+                <div class="workspace-title-area">
+                    <h2 id="destination-title">Explore & Personalize Your Journey</h2>
+                    <p id="destination-subtitle">Select a preset or video to build your interactive itinerary</p>
+                </div>
+                
+                <div class="controls-group">
+                    <!-- Slider: Pace -->
+                    <div class="control-item">
+                        <label for="pace-slider">Pace Intensity</label>
+                        <div class="slider-wrapper">
+                            <span id="pace-indicator">Balanced</span>
+                            <input type="range" id="pace-slider" class="custom-slider" min="1" max="3" value="2">
+                        </div>
+                    </div>
+                    <!-- Dropdown: Budget -->
+                    <div class="control-item">
+                        <label for="budget-select">Budget Profile</label>
+                        <select id="budget-select" class="custom-select">
+                            <option value="budget">Backpacker 🎒</option>
+                            <option value="moderate" selected>Moderate 💳</option>
+                            <option value="luxury">Luxury 💎</option>
+                        </select>
+                    </div>
+                    <!-- Multi-select: Vibes -->
+                    <div class="control-item">
+                        <label>Focus Styles</label>
+                        <div class="vibes-container">
+                            <div class="vibe-checkbox-label checked" data-vibe="sightseeing">Sightseeing</div>
+                            <div class="vibe-checkbox-label checked" data-vibe="foodie">Foodie</div>
+                            <div class="vibe-checkbox-label" data-vibe="adventure">Adventure</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Map & Timeline Workspace Grid -->
+            <div class="itinerary-split-container">
+                
+                <!-- Timeline scroll area -->
+                <div class="timeline-scrollable" id="itinerary-timeline-container">
+                    <!-- Day-by-day timeline details appended via app.js -->
+                    <div class="glass-card" style="text-align: center; padding: 40px; color: var(--color-text-muted);">
+                        <i class="fa-solid fa-compass-drafting" style="font-size: 48px; margin-bottom: 16px; background: var(--primary-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"></i>
+                        <h3>Ready to Plan</h3>
+                        <p style="margin-top: 10px; font-size: 13px;">Enter a YouTube video URL or select an iconic preset on the left to start generating your agentic, grounded travel plan.</p>
+                    </div>
+                </div>
+
+                <!-- Google Map column dashboard -->
+                <div class="map-container-column">
+                    <div class="map-hud">
+                        <div class="hud-info">
+                            <i class="fa-solid fa-circle-dot"></i> Active Route: <span id="hud-route-count">0 locations pinned</span>
+                        </div>
+                        <button class="btn-secondary" id="btn-recenter" style="padding: 6px 12px; font-size: 11px;">
+                            <i class="fa-solid fa-crosshairs"></i> Recenter
+                        </button>
+                    </div>
+                    <div class="map-actual" id="map-canvas">
+                        <!-- Google Maps loads here, with fallback interactive mockup design -->
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- API Keys & Settings Modal -->
+    <div class="modal-backdrop" id="modal-backdrop-settings">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-key"></i> API Integrations</h3>
+                <button class="modal-close" id="settings-close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="gemini-key">Google Gemini API Key</label>
+                    <input type="password" id="gemini-key" class="form-input" placeholder="AI Logic API Key (AIzaSy...)">
+                </div>
+                <div class="form-group">
+                    <label for="youtube-key">YouTube Data API Key (Optional)</label>
+                    <input type="password" id="youtube-key" class="form-input" placeholder="To retrieve metadata (Optional)">
+                </div>
+                <div class="form-group">
+                    <label for="maps-key">Google Maps API Key (Optional)</label>
+                    <input type="password" id="maps-key" class="form-input" placeholder="For live interactive map markers (Optional)">
+                </div>
+                <p style="font-size: 11px; color: var(--color-text-muted); line-height: 1.4;">
+                    <i class="fa-solid fa-shield-halved"></i> API keys are stored <strong>only locally</strong> in your browser context and are never transmitted to any third-party servers besides official Google APIs.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="settings-cancel">Cancel</button>
+                <button class="btn-primary" id="settings-save" style="padding: 10px 20px;">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Core JavaScript Logic -->
+    <script src="app.js"></script>
+</body>
+</html>
