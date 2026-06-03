@@ -1,12 +1,17 @@
 import json
 import os
+import uuid
+import asyncio
 import logging
 import urllib.parse
 import urllib.request
 from typing import List
 import pydantic
 from google.adk import Agent
+from google.adk.runners import InMemoryRunner
+from google.genai.types import Content, Part
 from config_utils import load_config
+from agent_hooks import before_tool_callback, after_tool_callback, on_tool_error_callback
 
 logger = logging.getLogger("LocationNavigation")
 
@@ -72,7 +77,10 @@ async def fetch_nearby_attractions(place_id: str, intent_query: str) -> dict:
                 name="concierge_agent",
                 model=gemini_model,
                 instruction=sys_instructions,
-                output_schema=RankedAttractions
+                output_schema=RankedAttractions,
+                before_tool_callback=before_tool_callback,
+                after_tool_callback=after_tool_callback,
+                on_tool_error_callback=on_tool_error_callback
             )
 
             prompt = (
@@ -84,9 +92,6 @@ async def fetch_nearby_attractions(place_id: str, intent_query: str) -> dict:
             logger.info(f"🧠 Prompting Gemini Model ({gemini_model}) to rank attractions for place_id='{place_id}'...")
 
             try:
-                from google.adk.runners import InMemoryRunner
-                from google.genai.types import Content, Part
-                import uuid
                 runner = InMemoryRunner(agent=agent)
                 
                 # ADK requires explicit session creation
@@ -129,7 +134,6 @@ async def fetch_nearby_attractions(place_id: str, intent_query: str) -> dict:
 
 async def enrich_hotels_with_attractions(hotels_list: list, intent_query: str):
     """Enriches a list of hotels with nearby attractions in parallel."""
-    import asyncio
     logger.info("Enriching hotels with nearby attractions...")
     hotel_tasks = []
     

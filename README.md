@@ -2,6 +2,8 @@
 
 A premium, high-fidelity, single-page web application that compiles fully detailed, interactive travel itineraries from a travel YouTube video URL. Built using vanilla web technologies (HTML5, CSS3, and ES6 JavaScript) on the frontend, and a multi-agent Python backend powered by the **Google Agent Development Kit (ADK)**.
 
+![Aura Voyage Homepage Snapshot](./homepage_snapshot.png)
+
 ---
 
 ## 🌟 Features & Architectural Flow

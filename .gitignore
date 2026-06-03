@@ -34,10 +34,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+agent_planning.txt
 
 # Project Specific
 config.json
-outputs/
 
 # IDEs
 .idea/

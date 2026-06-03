@@ -1,6 +1,6 @@
 import json
 import os
-
+import uuid
 import urllib.parse
 import urllib.request
 import asyncio
@@ -9,8 +9,12 @@ import pydantic
 from typing import List, Optional
 
 from google.adk import Agent
+from google.adk.runners import InMemoryRunner
+from google.adk.tools import FunctionTool
+from google.genai.types import Content, Part
 
 from config_utils import load_config
+from agent_hooks import before_tool_callback, after_tool_callback, on_tool_error_callback
 
 logger = logging.getLogger("ReviewSummarizer")
 
@@ -68,19 +72,8 @@ def google_places_details_reviews(place_id: str) -> str:
 # ==========================================
 
 class ReviewSummarizer:
-    def __init__(self):
-        self.config_data = load_config()
-        self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
-        self.maps_key = self.config_data.get("apiKeys", {}).get("maps", "")
-        
-        if self.gemini_key:
-            os.environ["GOOGLE_API_KEY"] = self.gemini_key
-        if self.maps_key:
-            os.environ["GOOGLE_MAPS_API_KEY"] = self.maps_key
-
-    async def summarize_reviews(self, places_list: List[dict], intent_query: str) -> ReviewSynthesizerOutput:
-        logger.info(f"Review Summarizer engaging for {len(places_list)} locations...")
+    def __init__(self, model_id: str = "gemini-3.5-flash"):
+        self.gemini_model = model_id
         
         sys_instructions = (
             "You are an expert Customer Reviews Synthesizer. Your goal is to read raw review inputs "
@@ -90,14 +83,23 @@ class ReviewSummarizer:
             "satisfies the user's custom trip intent (e.g., analyzing if families praise the toddler friendliness of a hotel)."
         )
 
-        agent = Agent(
+        review_details_tool = FunctionTool(google_places_details_reviews)
+
+        self.agent = Agent(
             name="review_summarizer",
             model=self.gemini_model,
             instruction=sys_instructions,
-            tools=[google_places_details_reviews],
-            output_schema=ReviewSynthesizerOutput
+            tools=[review_details_tool],
+            output_schema=ReviewSynthesizerOutput,
+            before_tool_callback=before_tool_callback,
+            after_tool_callback=after_tool_callback,
+            on_tool_error_callback=on_tool_error_callback
         )
+        self.runner = InMemoryRunner(agent=self.agent)
 
+    async def summarize_reviews(self, places_list: List[dict], intent_query: str) -> ReviewSynthesizerOutput:
+        logger.info(f"Review Summarizer engaging for {len(places_list)} locations...")
+        
         prompt = (
             f"Please retrieve and synthesize real customer reviews for the following locations:\n"
             f"{json.dumps(places_list, indent=2)}\n\n"
@@ -111,22 +113,17 @@ class ReviewSummarizer:
         logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) to analyze and synthesize reviews...")
 
         try:
-            from google.adk.runners import InMemoryRunner
-            from google.genai.types import Content, Part
-            import uuid
-            runner = InMemoryRunner(agent=agent)
-            
             # ADK requires explicit session creation
             session_id = f"sess_{uuid.uuid4()}"
-            await runner.session_service.create_session(
-                app_name=runner.app_name,
+            await self.runner.session_service.create_session(
+                app_name=self.runner.app_name,
                 user_id="default_user",
                 session_id=session_id
             )
             
             final_output = None
             msg = Content(role="user", parts=[Part.from_text(text=prompt)])
-            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+            async for event in self.runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
                 logger.info(f"⚙️  Agent Event: Processing step in review_summarizer...")
                 if hasattr(event, "output") and event.output:
                     final_output = event.output

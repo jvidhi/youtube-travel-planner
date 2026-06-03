@@ -1,6 +1,6 @@
 import json
 import os
-
+import uuid
 import urllib.parse
 import urllib.request
 import asyncio
@@ -9,8 +9,12 @@ import pydantic
 from typing import List, Optional
 
 from google.adk import Agent
+from google.adk.runners import InMemoryRunner
+from google.adk.tools import FunctionTool
+from google.genai.types import Content, Part
 
 from config_utils import load_config
+from agent_hooks import before_tool_callback, after_tool_callback, on_tool_error_callback
 
 logger = logging.getLogger("ItineraryPlanner")
 
@@ -145,19 +149,8 @@ def google_places_restaurant_search(destination: str, intent: str) -> str:
 # ==========================================
 
 class ItineraryPlanner:
-    def __init__(self):
-        self.config_data = load_config()
-        self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
-        self.maps_key = self.config_data.get("apiKeys", {}).get("maps", "")
-        
-        if self.gemini_key:
-            os.environ["GOOGLE_API_KEY"] = self.gemini_key
-        if self.maps_key:
-            os.environ["GOOGLE_MAPS_API_KEY"] = self.maps_key
-
-    async def plan(self, summarizer_output: dict, intent_query: str) -> ItineraryOutput:
-        logger.info(f"Itinerary Planner engaging for intent: {intent_query}")
+    def __init__(self, model_id: str = "gemini-3.5-flash"):
+        self.gemini_model = model_id
         
         sys_instructions = (
             "You are an advanced AI Travel Planner. Your goal is to compile a highly polished "
@@ -169,14 +162,24 @@ class ItineraryPlanner:
             "so they can be plotted accurately on visual maps downstream."
         )
 
-        agent = Agent(
+        hotel_search_tool = FunctionTool(google_places_hotel_search)
+        restaurant_search_tool = FunctionTool(google_places_restaurant_search)
+
+        self.agent = Agent(
             name="itinerary_planner",
             model=self.gemini_model,
             instruction=sys_instructions,
-            tools=[google_places_hotel_search, google_places_restaurant_search],
-            output_schema=ItineraryOutput
+            tools=[hotel_search_tool, restaurant_search_tool],
+            output_schema=ItineraryOutput,
+            before_tool_callback=before_tool_callback,
+            after_tool_callback=after_tool_callback,
+            on_tool_error_callback=on_tool_error_callback
         )
+        self.runner = InMemoryRunner(agent=self.agent)
 
+    async def plan(self, summarizer_output: dict, intent_query: str) -> ItineraryOutput:
+        logger.info(f"Itinerary Planner engaging for intent: {intent_query}")
+        
         # Prepare grounding context from summarizer output
         grounding_context = json.dumps(summarizer_output, indent=2)
 
@@ -195,22 +198,17 @@ class ItineraryPlanner:
         logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) to generate the detailed itinerary...")
         
         try:
-            from google.adk.runners import InMemoryRunner
-            from google.genai.types import Content, Part
-            import uuid
-            runner = InMemoryRunner(agent=agent)
-            
             # ADK requires explicit session creation
             session_id = f"sess_{uuid.uuid4()}"
-            await runner.session_service.create_session(
-                app_name=runner.app_name,
+            await self.runner.session_service.create_session(
+                app_name=self.runner.app_name,
                 user_id="default_user",
                 session_id=session_id
             )
             
             final_output = None
             msg = Content(role="user", parts=[Part.from_text(text=prompt)])
-            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+            async for event in self.runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
                 logger.info(f"⚙️  Agent Event: Processing step in itinerary_planner...")
                 if hasattr(event, "output") and event.output:
                     final_output = event.output

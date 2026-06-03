@@ -18,9 +18,8 @@ def deploy(project_id: str, location: str, staging_bucket: str):
     # Requirements for the Reasoning Engine
     # These must match the environment needed to run the agents
     requirements = [
-        "google-antigravity>=0.1.0",
+        "google-adk>=0.1.0",
         "pydantic>=2.0.0",
-        "youtube-transcript-api>=0.6.0",
         "google-cloud-aiplatform[reasoningengine]>=1.50.0",
         "cloudpickle>=3.0.0",
         "nest-asyncio>=1.6.0",

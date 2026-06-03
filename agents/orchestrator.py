@@ -1,11 +1,23 @@
 import json
 import os
-
 import sys
 import asyncio
 import logging
 import argparse
+import traceback
+import nest_asyncio
+import urllib.parse
+import urllib.request
 from typing import List
+
+import pydantic
+from google.adk import Agent
+
+from youtube_summarizer import YouTubeSummarizer
+from itinerary_planner import ItineraryPlanner
+from review_summarizer import ReviewSummarizer
+from location_navigation import fetch_nearby_attractions, enrich_hotels_with_attractions
+from config_utils import load_config
 
 # Fix sys.path for standalone execution
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-util"))
@@ -14,17 +26,6 @@ sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Orchestrator")
 
-from youtube_summarizer import YouTubeSummarizer
-from itinerary_planner import ItineraryPlanner
-from review_summarizer import ReviewSummarizer
-from location_navigation import fetch_nearby_attractions, enrich_hotels_with_attractions
-
-import urllib.parse
-import urllib.request
-from config_utils import load_config
-
-import pydantic
-from google.adk import Agent
 
 class TravelPlannerOrchestrator:
     def __init__(self):
@@ -33,15 +34,16 @@ class TravelPlannerOrchestrator:
         # Ensure API keys are in environment for SDKs (ADK, etc)
         gemini_key = self.config_data.get("apiKeys", {}).get("gemini")
         maps_key = self.config_data.get("apiKeys", {}).get("maps")
+        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
         
         if gemini_key:
             os.environ["GOOGLE_API_KEY"] = gemini_key
         if maps_key:
             os.environ["GOOGLE_MAPS_API_KEY"] = maps_key
 
-        self.summarizer = YouTubeSummarizer()
-        self.planner = ItineraryPlanner()
-        self.reviewer = ReviewSummarizer()
+        self.summarizer = YouTubeSummarizer(model_id=self.gemini_model)
+        self.planner = ItineraryPlanner(model_id=self.gemini_model)
+        self.reviewer = ReviewSummarizer(model_id=self.gemini_model)
 
     def query(self, video_url: str, intent_query: str) -> dict:
         """Entry point for Gemini Enterprise Agent Platform (Reasoning Engine)."""
@@ -52,13 +54,9 @@ class TravelPlannerOrchestrator:
 
         if loop and loop.is_running():
             # If we're already in an async event loop (like FastAPI in Reasoning Engine),
-            # we need to schedule it as a task or run it using an executor if it's a sync context,
-            # but usually Reasoning Engine supports returning the coroutine or running it via get_event_loop().run_until_complete if we create a new thread.
-            # However, since `query` is called synchronously by the Reasoning Engine framework, 
-            # we can use a new event loop in a new thread or nest_asyncio.
-            import nest_asyncio
+            # we use nest_asyncio to allow nested event loops.
             nest_asyncio.apply()
-            return asyncio.run(self.coordinate_plan(video_url, intent_query))
+            return loop.run_until_complete(self.coordinate_plan(video_url, intent_query))
         else:
             return asyncio.run(self.coordinate_plan(video_url, intent_query))
 
@@ -192,7 +190,7 @@ async def main():
         print(f"=========================================================\n")
         
         # Optionally write local file if running locally
-        outputs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs")
+        outputs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sample_single_agent_outputs")
         os.makedirs(outputs_dir, exist_ok=True)
         report_path = os.path.join(outputs_dir, "tuscany_coordinated_family_trip.md")
         with open(report_path, "w") as f:
@@ -201,7 +199,6 @@ async def main():
 
     except Exception as e:
         logger.error(f"Orchestrator execution failed: {e}")
-        import traceback
         traceback.print_exc()
 
 

@@ -4,6 +4,7 @@ import json
 import asyncio
 import logging
 import uvicorn
+import traceback
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, FileResponse
 from starlette.routing import Route, Mount
@@ -11,12 +12,12 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
+from agents.orchestrator import TravelPlannerOrchestrator
+
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents"))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "agent-util"))
-
-from agents.orchestrator import TravelPlannerOrchestrator
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -50,7 +51,6 @@ async def api_plan(request):
         return JSONResponse(result)
     except Exception as e:
         logger.error(f"Coordinated planning execution failed: {e}")
-        import traceback
         traceback.print_exc()
         return JSONResponse({"error": f"Failed to parse/execute planning sequence: {str(e)}"}, status_code=500)
 

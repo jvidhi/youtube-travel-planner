@@ -1,6 +1,7 @@
 import json
 import os
-
+import re
+import uuid
 import urllib.parse
 import urllib.request
 import asyncio
@@ -9,8 +10,12 @@ import pydantic
 from typing import List, Optional
 
 from google.adk import Agent
+from google.adk.runners import InMemoryRunner
+from google.genai.types import Content, Part
+from google import genai
 
 from config_utils import load_config
+from agent_hooks import before_tool_callback, after_tool_callback, on_tool_error_callback
 
 logger = logging.getLogger("YouTubeSummarizer")
 
@@ -111,29 +116,74 @@ def get_youtube_video_transcript(video_url: str) -> str:
         return json.dumps({"error": "Invalid YouTube URL"})
 
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-        transcript_list = YouTubeTranscriptApi().get_transcript(video_id)
+        config = load_config()
+        api_key = config.get("apiKeys", {}).get("youtube")
+        if not api_key:
+            raise ValueError("YouTube API Key is missing in config.json")
+
+        # 1. List caption tracks
+        list_url = f"https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId={video_id}&key={api_key}"
+        req = urllib.request.Request(list_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            captions_data = json.loads(response.read().decode())
         
-        full_text = ""
+        items = captions_data.get("items", [])
+        if not items:
+            raise ValueError(f"No captions found for video {video_id}")
+
+        # Prefer manual captions over auto-generated if possible
+        # Or just pick the first one for now as a baseline
+        caption_id = items[0]["id"]
+        
+        # 2. Download the caption track
+        # Note: Official API download often requires OAuth2 for non-owned videos.
+        # We try it, but expect it might fail for many public videos.
+        download_url = f"https://www.googleapis.com/youtube/v3/captions/{caption_id}?tfmt=vtt&key={api_key}"
+        download_req = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(download_req) as response:
+            transcript_vtt = response.read().decode()
+
+        # Simple VTT parsing to extract text and timestamps
         lines = []
-        for entry in transcript_list:
-            start_sec = int(entry['start'])
-            minutes = start_sec // 60
-            seconds = start_sec % 60
-            timestamp = f"[{minutes:02d}:{seconds:02d}]"
-            line = f"{timestamp} {entry['text']}"
-            lines.append(line)
-            full_text += entry['text'] + " "
+        full_text = ""
+        current_timestamp = ""
+        
+        for line in transcript_vtt.split("\n"):
+            line = line.strip()
+            if "-->" in line:
+                # Extract start time (HH:MM:SS.mmm)
+                start_time_str = line.split("-->")[0].strip()
+                # Convert to [MM:SS]
+                parts = start_time_str.split(":")
+                if len(parts) >= 2:
+                    try:
+                        hours = int(parts[0]) if len(parts) == 3 else 0
+                        mins = int(parts[-2])
+                        secs = float(parts[-1])
+                        total_mins = hours * 60 + mins
+                        current_timestamp = f"[{total_mins:02d}:{int(secs):02d}]"
+                    except:
+                        current_timestamp = ""
+            elif line and not line.isdigit() and not line.startswith("WEBVTT"):
+                if current_timestamp:
+                    line_with_ts = f"{current_timestamp} {line}"
+                    lines.append(line_with_ts)
+                    current_timestamp = "" # Only apply timestamp to the next line once
+                else:
+                    # If it's a multi-line caption, just append the text
+                    if lines:
+                        lines[-1] += " " + line
+                full_text += line + " "
 
         return json.dumps({
             "video_id": video_id,
             "transcript_text": full_text.strip(),
-            "chronological_transcript": "\n".join(lines)
+            "chronological_transcript": "\n".join(lines),
+            "note": "Retrieved via official YouTube Data API (captions resource)."
         }, indent=2)
     except Exception as e:
-        logger.warning(f"youtube_transcript_api failed: {e}. Falling back to Gemini multimodal video parsing.")
+        logger.warning(f"Official YouTube Captions API failed: {e}. Falling back to Gemini multimodal video parsing.")
         try:
-            from google import genai
             config_data = load_config()
             gemini_key = config_data.get("apiKeys", {}).get("gemini", "")
             if not gemini_key:
@@ -171,39 +221,69 @@ def get_youtube_video_transcript(video_url: str) -> str:
 # ==========================================
 
 class YouTubeSummarizer:
-    def __init__(self):
-        self.config_data = load_config()
-        self.gemini_key = self.config_data.get("apiKeys", {}).get("gemini", "")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+    def __init__(self, model_id: str = "gemini-3.5-flash"):
+        self.gemini_model = model_id
         
-        if self.gemini_key:
-            os.environ["GOOGLE_API_KEY"] = self.gemini_key
-
-    async def summarize(self, video_url: str) -> SummarizerOutput:
-        logger.info(f"Summarizer engaging for travel video: {video_url}")
-        
-        # 🚀 OPTIMIZATION: Pre-fetch context concurrently in Python to eliminate LLM tool-calling latency
-        logger.info(f"🚀 Pre-fetching YouTube transcript and metadata concurrently...")
-        
-        loop = asyncio.get_running_loop()
-        details_task = loop.run_in_executor(None, get_youtube_video_details, video_url)
-        transcript_task = loop.run_in_executor(None, get_youtube_video_transcript, video_url)
-        
-        video_details, video_transcript = await asyncio.gather(details_task, transcript_task)
-        
-        logger.info(f"✅ Video Context Pre-fetch Complete. Compiling AI Summary...")
-
         sys_instructions = (
             "You are an expert YouTube Travel Summarizer. Your goal is to extract all landmarks, "
             "hotel opportunities, and connectivity/transit tips from the provided video snippet and transcript."
         )
 
-        agent = Agent(
+        self.agent = Agent(
             name="youtube_summarizer",
             model=self.gemini_model,
             instruction=sys_instructions,
-            output_schema=SummarizerOutput
+            output_schema=SummarizerOutput,
+            before_tool_callback=before_tool_callback,
+            after_tool_callback=after_tool_callback,
+            on_tool_error_callback=on_tool_error_callback
         )
+        self.runner = InMemoryRunner(agent=self.agent)
+
+    async def summarize(self, video_url: str) -> SummarizerOutput:
+        logger.info(f"Summarizer engaging for travel video: {video_url}")
+        
+        # Step 1: Fetch video details first to get title and channel for caching
+        logger.info(f"🚀 Fetching YouTube metadata to check transcript cache...")
+        loop = asyncio.get_running_loop()
+        video_details = await loop.run_in_executor(None, get_youtube_video_details, video_url)
+        
+        try:
+            details_obj = json.loads(video_details)
+            title = details_obj.get("title", "Unknown_Title")
+            channel = details_obj.get("channel", "Unknown_Channel")
+        except:
+            title = "Unknown_Title"
+            channel = "Unknown_Channel"
+
+        def sanitize_filename(name):
+            return re.sub(r'[^a-zA-Z0-9_\-]', '_', name)
+            
+        safe_title = sanitize_filename(title)
+        safe_channel = sanitize_filename(channel)
+        cache_filename = f"{safe_title}__by__{safe_channel}_transcript.json"
+        
+        # We assume sample_single_agent_outputs is one directory up if agents/ is our cwd,
+        # but let's make it relative to the project root (where this is usually run from).
+        # We can dynamically resolve relative to the script location.
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cache_dir = os.path.join(base_dir, "sample_single_agent_outputs")
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        cache_filepath = os.path.join(cache_dir, cache_filename)
+
+        if os.path.exists(cache_filepath):
+            logger.info(f"✅ Found cached transcript: {cache_filename}")
+            with open(cache_filepath, "r", encoding="utf-8") as f:
+                video_transcript = f.read()
+        else:
+            logger.info(f"🚀 Cache miss. Fetching YouTube transcript...")
+            video_transcript = await loop.run_in_executor(None, get_youtube_video_transcript, video_url)
+            with open(cache_filepath, "w", encoding="utf-8") as f:
+                f.write(video_transcript)
+            logger.info(f"✅ Saved new transcript to cache: {cache_filename}")
+        
+        logger.info(f"✅ Video Context Ready. Compiling AI Summary...")
 
         prompt = (
             f"Please extract all travel destinations, hotel details, practical tips, "
@@ -215,15 +295,10 @@ class YouTubeSummarizer:
         logger.info(f"🧠 Prompting Gemini Model ({self.gemini_model}) for structured travel synthesis...")
         
         try:
-            from google.adk.runners import InMemoryRunner
-            from google.genai.types import Content, Part
-            import uuid
-            runner = InMemoryRunner(agent=agent)
-            
             # ADK requires explicit session creation
             session_id = f"sess_{uuid.uuid4()}"
-            await runner.session_service.create_session(
-                app_name=runner.app_name,
+            await self.runner.session_service.create_session(
+                app_name=self.runner.app_name,
                 user_id="default_user",
                 session_id=session_id
             )
@@ -232,7 +307,7 @@ class YouTubeSummarizer:
             # A common pattern is to just collect the final OUTPUT event.
             final_output = None
             msg = Content(role="user", parts=[Part.from_text(text=prompt)])
-            async for event in runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
+            async for event in self.runner.run_async(user_id="default_user", session_id=session_id, new_message=msg):
                 logger.info(f"⚙️  Agent Event: Processing step in youtube_summarizer...")
                 # ADK events usually contain output in event.output when event.type == "OUTPUT"
                 # but to be safe we can check for output attribute.

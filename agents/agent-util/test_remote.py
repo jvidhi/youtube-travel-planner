@@ -1,5 +1,6 @@
 from vertexai.preview import reasoning_engines
 import vertexai
+import traceback
 
 vertexai.init(project="vertex-ai-382806", location="us-central1")
 
@@ -16,5 +17,4 @@ try:
     print("Response received!")
     print(response.get("report_md", "No report_md found in response."))
 except Exception as e:
-    import traceback
     traceback.print_exc()
