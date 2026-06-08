@@ -1,0 +1,300 @@
+{
+  "title": "Family-Friendly Greek Adventure: Athens & Naxos Island",
+  "subtitle": "A hand-crafted 5-day itinerary exploring ancient wonders, shallow sandy beaches, and charming villages",
+  "places": [
+    {
+      "id": "athens_temple_of_poseidon",
+      "name": "Athens & Temple of Poseidon",
+      "category": "City / Historic Site",
+      "desc": "The capital city of Greece and the historic Temple of Poseidon, perfect for a family trip exploring ancient history and beautiful coastlines.",
+      "lat": 37.9741935,
+      "lng": 23.7199049,
+      "sources": [
+        "youtube",
+        "google_maps"
+      ]
+    },
+    {
+      "id": "naxos_paros",
+      "name": "Naxos & Paros",
+      "category": "Islands",
+      "desc": "Beautiful Cycladic islands with spectacular shallow sandy beaches and historic villages, highly recommended for families.",
+      "lat": 37.1041642,
+      "lng": 25.3755766,
+      "sources": [
+        "youtube",
+        "google_maps"
+      ]
+    }
+  ],
+  "hotels": [
+    {
+      "id": "ava_boutique_hotel_athens",
+      "name": "AVA Boutique Hotel Athens",
+      "address": "Lisikratous 9, 11, Athina 105 58, Greece",
+      "rating": 4.7,
+      "place_id": "ChIJb_LTVRa9oRQR1p9BxEp1SDQ",
+      "description": "An exceptionally highly rated boutique hotel located right in the historical Plaka neighborhood, offering spacious family-friendly suites.",
+      "sources": [
+        "google_maps"
+      ]
+    },
+    {
+      "id": "hotel_naxos_resort",
+      "name": "Hotel Naxos Resort",
+      "address": "Saint George Beach, Naxos 843 00, Greece",
+      "rating": 4.4,
+      "place_id": "ChIJtUiQINgLmBQRJon3poBv140",
+      "description": "A fantastic, family-friendly hotel located steps from Saint George Beach, featuring an inviting pool area and comfortable family rooms.",
+      "sources": [
+        "google_maps"
+      ]
+    }
+  ],
+  "days": [
+    {
+      "day": 1,
+      "summary": "Arrive in Athens, settle into your boutique family-friendly hotel, and start exploring the historic Plaka district before an iconic family dinner near the Acropolis.",
+      "items": [
+        {
+          "id": "athens_hotel_checkin",
+          "time": "14:00",
+          "title": "Family Check-in at AVA Boutique Hotel Athens",
+          "type": "Accommodation",
+          "refId": null,
+          "description": "Settle into your spacious, family-friendly suite in the quiet, historic neighborhood of Plaka, right under the shadow of the Acropolis. This boutique hotel offers great amenities and space for families.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        },
+        {
+          "id": "plaka_walking_tour",
+          "time": "15:30",
+          "title": "Stroll Through Plaka & Acropolis Slopes",
+          "type": "Sightseeing",
+          "refId": "athens_temple_of_poseidon",
+          "description": "Meander through the car-free, cobblestone streets of Plaka, enjoying ice cream, historic souvenir shops, and the ancient monument ruins nearby. This is a relaxed, kid-friendly introduction to beautiful Athens.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "dinner_yard",
+          "time": "19:00",
+          "title": "Family Dinner at Yard Restaurant",
+          "type": "Dining",
+          "refId": null,
+          "description": "Savor highly rated, child-friendly Greek and Mediterranean specialties in a warm and welcoming courtyard setting located steps from the Acropolis Museum.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        }
+      ]
+    },
+    {
+      "day": 2,
+      "summary": "Take a high-speed ferry to the beautiful island of Naxos. Check in to your beachfront resort and spend the afternoon playing in the shallow, safe waters of Saint George Beach.",
+      "items": [
+        {
+          "id": "ferry_to_naxos",
+          "time": "07:30",
+          "title": "Scenic Ferry Ride from Athens to Naxos",
+          "type": "Transportation",
+          "refId": "naxos_paros",
+          "description": "Board a high-speed ferry from Piraeus Port to Naxos Island. Keep an eye out for beautiful views of the Aegean Sea and neighboring islands like Paros.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "naxos_hotel_checkin",
+          "time": "13:30",
+          "title": "Check-in at Hotel Naxos Resort",
+          "type": "Accommodation",
+          "refId": null,
+          "description": "Arrive at your family-oriented resort situated directly next to Saint George Beach, featuring a sparkling swimming pool and comfortable family suites.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        },
+        {
+          "id": "st_george_beach_fun",
+          "time": "15:00",
+          "title": "Beach Playtime at Saint George Beach",
+          "type": "Leisure",
+          "refId": "naxos_paros",
+          "description": "Spend the afternoon at Saint George Beach, featuring shallow, crystal-clear, calm waters and soft golden sand\u2014ideal for toddlers and children of all ages.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "dinner_to_elliniko",
+          "time": "19:30",
+          "title": "Traditional Dinner at To Elliniko Restaurant",
+          "type": "Dining",
+          "refId": null,
+          "description": "Indulge in an incredible, authentic family-style Greek dinner featuring locally sourced Naxian cheeses, meats, and fresh salads. Very welcoming to kids!",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        }
+      ]
+    },
+    {
+      "day": 3,
+      "summary": "Discover the medieval Venetian Castle of Naxos Town, take a gentle afternoon stroll, and experience a breathtaking sunset at the historic Temple of Apollo.",
+      "items": [
+        {
+          "id": "kastro_naxos_walk",
+          "time": "09:30",
+          "title": "Explore the Medieval Venetian Kastro",
+          "type": "Sightseeing",
+          "refId": "naxos_paros",
+          "description": "Walk up the winding paths to the 13th-century Venetian Castle. Kids will love exploring the narrow alleys, arches, and old towers that feel like a fairy tale.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "harbour_walk_gelato",
+          "time": "14:30",
+          "title": "Harbour Walk & Gelato Treat",
+          "type": "Leisure",
+          "refId": "naxos_paros",
+          "description": "Stroll along the lively waterfront promenade of Naxos Town, check out the traditional fishing boats, and grab some authentic Greek gelato.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "portara_sunset",
+          "time": "18:00",
+          "title": "Sunset at the Portara (Temple of Apollo)",
+          "type": "Sightseeing",
+          "refId": "naxos_paros",
+          "description": "Walk along the causeway to the iconic giant marble gateway of the unfinished Temple of Apollo. It's the most scenic landmark in Naxos, perfect for beautiful family photos.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "dinner_doukato",
+          "time": "19:30",
+          "title": "Family Dinner at Doukato Restaurant",
+          "type": "Dining",
+          "refId": null,
+          "description": "Eat in a gorgeous, quiet courtyard tucked away inside the old town, offering wonderful local dishes that satisfy both parents and kids in a calm setting.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        }
+      ]
+    },
+    {
+      "day": 4,
+      "summary": "Head into the mountainous heart of Naxos to discover traditional pottery and historic villages, followed by a lazy afternoon at Plaka Beach.",
+      "items": [
+        {
+          "id": "halki_village_visit",
+          "time": "09:30",
+          "title": "Explore Halki Village & Pottery Shops",
+          "type": "Sightseeing",
+          "refId": "naxos_paros",
+          "description": "Drive up to the charming mountain village of Halki. Let the kids participate in or watch traditional pottery making and explore the beautiful neoclassic alleys.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "plaka_beach_relaxation",
+          "time": "14:30",
+          "title": "Family Relaxation at Plaka Beach",
+          "type": "Leisure",
+          "refId": "naxos_paros",
+          "description": "Head to Plaka Beach, known for its endless stretch of fine sand and crystalline, calm waters. Perfect for sandcastle-building and swimming in the calm Aegean.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "dinner_giannoulis",
+          "time": "19:00",
+          "title": "Seafood & Grill Dinner at Giannoulis",
+          "type": "Dining",
+          "refId": null,
+          "description": "A highly-rated, family-friendly beachside taverna at Agios Prokopios serving excellent local specialties and fresh seafood.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        }
+      ]
+    },
+    {
+      "day": 5,
+      "summary": "Travel back to Athens and embark on a private family coastal drive to Cape Sounion to watch the legendary sunset at the ancient Temple of Poseidon.",
+      "items": [
+        {
+          "id": "ferry_back_athens",
+          "time": "09:00",
+          "title": "Return Ferry to Athens",
+          "type": "Transportation",
+          "refId": "naxos_paros",
+          "description": "Relax on your high-speed ferry ride back to the mainland, soaking in the beautiful Greek sun.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "sounion_excursion",
+          "time": "15:30",
+          "title": "Excursion to Temple of Poseidon at Sounion",
+          "type": "Sightseeing",
+          "refId": "athens_temple_of_poseidon",
+          "description": "Take a scenic drive down the Athens Riviera to the magnificent cliffside Temple of Poseidon. Hear the legendary Greek mythology stories that kids will adore as you watch the spectacular sunset over the Aegean.",
+          "swaps": [],
+          "sources": [
+            "youtube",
+            "google_maps"
+          ]
+        },
+        {
+          "id": "dinner_hill_athens",
+          "time": "19:30",
+          "title": "Farewell Dinner at Hill Athens Restaurant",
+          "type": "Dining",
+          "refId": null,
+          "description": "Celebrate the end of an amazing family trip with high-quality Greek cuisine and an incredible view of the illuminated Acropolis.",
+          "swaps": [],
+          "sources": [
+            "google_maps"
+          ]
+        }
+      ]
+    }
+  ]
+}

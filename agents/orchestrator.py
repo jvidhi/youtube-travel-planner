@@ -13,14 +13,19 @@ from typing import List
 import pydantic
 from google.adk import Agent
 
+# Fix sys.path for standalone or server execution
+_agents_dir = os.path.dirname(os.path.abspath(__file__))
+if _agents_dir not in sys.path:
+    sys.path.insert(0, _agents_dir)
+_util_dir = os.path.join(_agents_dir, "agent-util")
+if _util_dir not in sys.path:
+    sys.path.insert(0, _util_dir)
+
 from youtube_summarizer import YouTubeSummarizer
 from itinerary_planner import ItineraryPlanner
 from review_summarizer import ReviewSummarizer
-from location_navigation import fetch_nearby_attractions, enrich_hotels_with_attractions
+from location_navigation import LocationNavigationAgent
 from config_utils import load_config
-
-# Fix sys.path for standalone execution
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent-util"))
 
 # Set up standard logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -31,19 +36,24 @@ class TravelPlannerOrchestrator:
     def __init__(self):
         self.config_data = load_config()
         
-        # Ensure API keys are in environment for SDKs (ADK, etc)
+        # We extract keys explicitly via DI, but ADK requires environment variables
         gemini_key = self.config_data.get("apiKeys", {}).get("gemini")
         maps_key = self.config_data.get("apiKeys", {}).get("maps")
-        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+        youtube_key = self.config_data.get("apiKeys", {}).get("youtube")
         
         if gemini_key:
             os.environ["GOOGLE_API_KEY"] = gemini_key
+            os.environ["GEMINI_API_KEY"] = gemini_key
         if maps_key:
             os.environ["GOOGLE_MAPS_API_KEY"] = maps_key
 
-        self.summarizer = YouTubeSummarizer(model_id=self.gemini_model)
-        self.planner = ItineraryPlanner(model_id=self.gemini_model)
-        self.reviewer = ReviewSummarizer(model_id=self.gemini_model)
+        self.gemini_model = self.config_data.get("models", {}).get("gemini", {}).get("activeModelId", "gemini-3.5-flash")
+        
+        # Instantiate all agents declaratively and safely
+        self.summarizer = YouTubeSummarizer(youtube_key=youtube_key, gemini_key=gemini_key, model_id=self.gemini_model)
+        self.planner = ItineraryPlanner(maps_key=maps_key, model_id=self.gemini_model)
+        self.reviewer = ReviewSummarizer(maps_key=maps_key, model_id=self.gemini_model)
+        self.location_agent = LocationNavigationAgent(maps_key=maps_key, gemini_key=gemini_key, model_id=self.gemini_model)
 
     def query(self, video_url: str, intent_query: str) -> dict:
         """Entry point for Gemini Enterprise Agent Platform (Reasoning Engine)."""
@@ -53,8 +63,6 @@ class TravelPlannerOrchestrator:
             loop = None
 
         if loop and loop.is_running():
-            # If we're already in an async event loop (like FastAPI in Reasoning Engine),
-            # we use nest_asyncio to allow nested event loops.
             nest_asyncio.apply()
             return loop.run_until_complete(self.coordinate_plan(video_url, intent_query))
         else:
@@ -103,7 +111,7 @@ class TravelPlannerOrchestrator:
         
         # Enrich hotels with nearby attractions in parallel
         hotels_list = planner_data.get("hotels", [])
-        await enrich_hotels_with_attractions(hotels_list, intent_query)
+        await self.location_agent.enrich_hotels_with_attractions(hotels_list, intent_query)
 
         aggregated_result = {
             "youtube_details": summarizer_output.model_dump() if hasattr(summarizer_output, 'model_dump') else summarizer_output,

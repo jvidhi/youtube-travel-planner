@@ -19,9 +19,27 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents"))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents", "agent-util"))
 
+# --- Custom Log Handler for UI ---
+ui_logs = []
+class UILogHandler(logging.Handler):
+    def emit(self, record):
+        if record.levelno >= logging.INFO:
+            ui_logs.append(self.format(record))
+
+ui_handler = UILogHandler()
+ui_handler.setFormatter(logging.Formatter('%(message)s'))
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("TravelServer")
+
+# Attach handler to relevant loggers
+logging.getLogger("Orchestrator").addHandler(ui_handler)
+logging.getLogger("YouTubeSummarizer").addHandler(ui_handler)
+logging.getLogger("ItineraryPlanner").addHandler(ui_handler)
+logging.getLogger("ReviewSummarizer").addHandler(ui_handler)
+logging.getLogger("LocationNavigation").addHandler(ui_handler)
+logging.getLogger("AgentHooks").addHandler(ui_handler)
 
 orchestrator = TravelPlannerOrchestrator()
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,8 +51,18 @@ async def serve_index(request):
     return FileResponse(index_path)
 
 
+async def api_status(request):
+    """Endpoint for the frontend to poll logs."""
+    global ui_logs
+    logs_to_send = list(ui_logs)
+    ui_logs.clear()
+    return JSONResponse({"logs": logs_to_send})
+
+
 async def api_plan(request):
     """Endpoint to execute the multi-agent coordinated travel planner."""
+    global ui_logs
+    ui_logs.clear()  # Clear previous logs on new request
     try:
         body = await request.json()
         video_url = body.get("url")
@@ -60,6 +88,7 @@ app = Starlette(
     routes=[
         Route("/", serve_index, methods=["GET"]),
         Route("/api/plan", api_plan, methods=["POST"]),
+        Route("/api/status", api_status, methods=["GET"]),
         # Mount static files directory to serve CSS, JS, and configs
         Mount("/", app=StaticFiles(directory=base_dir), name="static")
     ],

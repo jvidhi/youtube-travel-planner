@@ -74,6 +74,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         logToConsole(`Initiating planning for: ${url}`);
         
+        let pollInterval = setInterval(async () => {
+            try {
+                let statusRes = await fetch('/api/status');
+                if (statusRes.ok) {
+                    let statusData = await statusRes.json();
+                    if (statusData.logs && statusData.logs.length > 0) {
+                        statusData.logs.forEach(msg => logToConsole(msg));
+                    }
+                }
+            } catch(e) {
+                // Ignore poll errors
+            }
+        }, 1500);
+
         try {
             // Call the local backend server
             const response = await fetch('/api/plan', {
@@ -83,6 +97,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({ url: url, intent: intent })
             });
+
+            clearInterval(pollInterval);
+            
+            // Do one last poll to catch trailing logs
+            try {
+                let finalStatusRes = await fetch('/api/status');
+                if (finalStatusRes.ok) {
+                    let finalStatusData = await finalStatusRes.json();
+                    if (finalStatusData.logs && finalStatusData.logs.length > 0) {
+                        finalStatusData.logs.forEach(msg => logToConsole(msg));
+                    }
+                }
+            } catch(e) {}
 
             if (!response.ok) {
                 const errData = await response.json();
@@ -106,12 +133,20 @@ document.addEventListener('DOMContentLoaded', () => {
             placesContainer.innerHTML = '';
             if (yt && yt.places) {
                 yt.places.forEach(place => {
+                    let sourceLogos = '';
+                    if (place.sources && place.sources.length > 0) {
+                        if (place.sources.includes('youtube')) sourceLogos += `<i class="fa-brands fa-youtube" title="Recommended by YouTube" style="color: #ff0000; margin-left: 8px; font-size: 0.9rem;"></i>`;
+                        if (place.sources.includes('google_maps')) sourceLogos += `<i class="fa-brands fa-google" title="Verified by Google Maps" style="color: #4285F4; margin-left: 6px; font-size: 0.8rem;"></i>`;
+                    } else {
+                        sourceLogos = `<i class="fa-brands fa-youtube" title="Recommended by YouTube" style="color: #ff0000; margin-left: 8px; font-size: 0.9rem;"></i>`;
+                    }
+
                     const card = document.createElement('div');
                     card.className = 'glass-card';
                     card.style.marginBottom = '10px';
                     card.style.padding = '1rem';
                     card.innerHTML = `
-                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(place.name)} <span style="font-size: 0.75rem; padding: 2px 6px; background: rgba(59,130,246,0.2); border-radius: 10px; margin-left: 8px;">${DOMPurify.sanitize(place.category)}</span></h4>
+                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(place.name)}${sourceLogos} <span style="font-size: 0.75rem; padding: 2px 6px; background: rgba(59,130,246,0.2); border-radius: 10px; margin-left: 8px;">${DOMPurify.sanitize(place.category)}</span></h4>
                         <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 5px;">${DOMPurify.sanitize(place.description)}</p>
                         <p style="font-size: 0.8rem; color: var(--accent-color);"><i class="fa-solid fa-masks-theater"></i> Vibe: ${DOMPurify.sanitize(place.vibe)}</p>
                     `;
@@ -125,6 +160,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const recommendedHotels = data.custom_itinerary?.hotels;
             if (recommendedHotels) {
                 recommendedHotels.forEach(hotel => {
+                    let sourceLogos = '';
+                    if (hotel.sources && hotel.sources.length > 0) {
+                        if (hotel.sources.includes('youtube')) sourceLogos += `<i class="fa-brands fa-youtube" title="Recommended by YouTube" style="color: #ff0000; margin-left: 8px; font-size: 0.9rem;"></i>`;
+                        if (hotel.sources.includes('google_maps')) sourceLogos += `<i class="fa-brands fa-google" title="Verified by Google Maps" style="color: #4285F4; margin-left: 6px; font-size: 0.8rem;"></i>`;
+                    } else {
+                        sourceLogos = `<i class="fa-brands fa-google" title="Verified by Google Maps" style="color: #4285F4; margin-left: 6px; font-size: 0.8rem;"></i>`;
+                    }
+
                     const card = document.createElement('div');
                     card.className = 'glass-card';
                     card.style.marginBottom = '10px';
@@ -144,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
 
                     card.innerHTML = `
-                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(hotel.name)} <span style="font-size: 0.75rem; margin-left: 8px; color: var(--accent-color);">⭐ ${DOMPurify.sanitize(hotel.rating)}</span></h4>
+                        <h4 style="margin-bottom: 5px; color: var(--text-primary);">${DOMPurify.sanitize(hotel.name)}${sourceLogos} <span style="font-size: 0.75rem; margin-left: 8px; color: var(--accent-color);">⭐ ${DOMPurify.sanitize(hotel.rating)}</span></h4>
                         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;"><i class="fa-solid fa-location-dot"></i> ${DOMPurify.sanitize(hotel.address)}</p>
                         <p style="font-size: 0.85rem; color: var(--text-secondary);">${DOMPurify.sanitize(hotel.description)}</p>
                         ${attractionsHTML}
@@ -211,12 +254,33 @@ document.addEventListener('DOMContentLoaded', () => {
                                 if (item.type === 'food') icon = 'fa-utensils';
                                 else if (item.type === 'activity') icon = 'fa-person-hiking';
                                 else if (item.type === 'hotel') icon = 'fa-bed';
+                                
+                                // Source attribution logos
+                                let sourceLogos = '';
+                                if (item.sources && item.sources.length > 0) {
+                                    if (item.sources.includes('youtube')) {
+                                        sourceLogos += `<i class="fa-brands fa-youtube" title="Recommended by YouTube" style="color: #ff0000; margin-left: 8px; font-size: 0.9rem;"></i>`;
+                                    }
+                                    if (item.sources.includes('google_maps')) {
+                                        sourceLogos += `<i class="fa-brands fa-google" title="Verified by Google Maps" style="color: #4285F4; margin-left: 6px; font-size: 0.8rem;"></i>`;
+                                    }
+                                } else {
+                                    // Fallback to heuristic if sources field is missing
+                                    sourceLogos += `<i class="fa-brands fa-youtube" title="Recommended by YouTube" style="color: #ff0000; margin-left: 8px; font-size: 0.9rem;"></i>`;
+                                    if (item.refId) {
+                                        const matchPlace = itinerary.places?.find(p => p.id === item.refId);
+                                        const matchHotel = itinerary.hotels?.find(h => h.id === item.refId);
+                                        if (matchPlace || matchHotel) {
+                                            sourceLogos += `<i class="fa-brands fa-google" title="Verified by Google Maps" style="color: #4285F4; margin-left: 6px; font-size: 0.8rem;"></i>`;
+                                        }
+                                    }
+                                }
 
                                 itemsHTML += `
                                     <div style="display: flex; gap: 15px; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid var(--border-card);">
                                         <div style="font-weight: bold; color: var(--accent-color); width: 60px; flex-shrink: 0; font-size: 0.85rem;">${DOMPurify.sanitize(item.time)}</div>
                                         <div style="flex: 1;">
-                                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;"><i class="fa-solid ${icon}" style="margin-right: 6px; font-size: 0.8rem; color: var(--text-muted);"></i>${DOMPurify.sanitize(item.title)}</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;"><i class="fa-solid ${icon}" style="margin-right: 6px; font-size: 0.8rem; color: var(--text-muted);"></i>${DOMPurify.sanitize(item.title)}${sourceLogos}</div>
                                             <div style="font-size: 0.8rem; color: var(--text-secondary);">${DOMPurify.sanitize(item.description)}</div>
                                             ${swapsHTML}
                                         </div>

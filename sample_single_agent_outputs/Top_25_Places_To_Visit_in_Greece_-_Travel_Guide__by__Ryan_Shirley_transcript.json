@@ -1,0 +1,1 @@
+{"error": "Failed to fetch transcript and Gemini fallback failed: 'NoneType' object has no attribute 'before_request'"}

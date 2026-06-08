@@ -35,6 +35,8 @@ ENV/
 env.bak/
 venv.bak/
 agent_planning.txt
+next_steps.txt
+current_phase.txt
 
 # Project Specific
 config.json
